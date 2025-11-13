@@ -7,237 +7,225 @@ Original file is located at
     https://colab.research.google.com/drive/14Gr4avacYlTp1v8FZxQ0gp4jd0UFQJLG
 """
 
-# Upload kaggle.json
-from google.colab import files
-files.upload()   # Upload your kaggle.json file when prompted
-
-# Set Kaggle API credentials
-!mkdir -p ~/.kaggle
-!cp kaggle.json ~/.kaggle/
-!chmod 600 ~/.kaggle/kaggle.json
-
-# Download dataset
-!kaggle datasets download -d balaka18/email-spam-classification-dataset-csv
-!unzip -o email-spam-classification-dataset-csv.zip
-
-print(df.columns.tolist())
-print(df.head())
-
-text_column = 'message'  # or whatever your dataset uses
-
-print(df.columns.tolist())    # View actual column names
-print(df.head())              # See first few rows
-print(df.info())              # Check for non-null entries
-
-text_column = 'message'  # Change this to match your actual column name
-
-print("Non-empty rows:", df[text_column].notnull().sum())
-
-df = pd.read_csv('/content/emails.csv')  # Adjust path if necessary
-print(df.head())
-
-# Replace 'message' with your actual column name
-df['message'] = df['message'].astype(str)  # Ensure everything is string
-df['message'] = df['message'].str.lower().str.strip()  # Lowercase and remove whitespace
-df.dropna(subset=['message'], inplace=True)  # Remove any rows with missing text
-
-from sklearn.feature_extraction.text import TfidfVectorizer
-
-vectorizer = TfidfVectorizer(stop_words='english', max_features=5000)
-X = vectorizer.fit_transform(df['message'])
-
-print(df.columns.tolist())
-
-df = pd.read_csv('emails.csv')
-
+# ---------------------------------------------------------
+# 1. Import Libraries
+# ---------------------------------------------------------
 import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-df = pd.read_csv('emails.csv', header=None)
-
-print(df.shape)  # Rows, Columns
-print(df.head(1))  # Preview first row
-
-df = pd.read_csv('emails.csv', sep='\t', header=None)
-print(df.shape)
-print(df.head(1))
-
-import pandas as pd
-
-# Load your CSV as you did
-df = pd.read_csv('emails.csv', header=None)
-
-# Combine the comma-separated tokens into normal text
-df['text'] = df[0].apply(lambda x: ' '.join(str(x).split(',')))
-
-# Drop the original column
-df = df[['text']]
-
-# Check cleaned text
-print(df.head(3))
-
-print(df.head(20))
-print(df.shape)
-
-import pandas as pd
-
-df = pd.read_csv('emails.csv', low_memory=False)
-print(df.head(20))
-print(df.columns)
-print(df.shape)
-
-!pip install pandas scikit-learn
-
-import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.model_selection import train_test_split
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
-from sklearn.metrics import classification_report, accuracy_score, confusion_matrix
+from sklearn.metrics import (
+    accuracy_score, confusion_matrix, precision_score,
+    recall_score, f1_score, classification_report
+)
 
-# Step 3: Load dataset
-# Upload your emails.csv file via Colab file upload option
-from google.colab import files
-uploaded = files.upload()
+# ---------------------------------------------------------
+# 2. Load Dataset
+# ---------------------------------------------------------
+df = pd.read_csv("emails.csv")   # Upload to Colab first
 
-# Step 4: Read CSV
-df = pd.read_csv('emails.csv')
+print("Dataset Loaded Successfully")
+df.head()
 
-# Step 5: Preprocessing
-# Ensure 'text' column is treated as string, fill missing values
-X_text = df['text'].fillna("").astype(str)
-y = df['spam']  # 1 = Spam, 0 = Not Spam
+# ---------------------------------------------------------
+# 3. Check for Missing Values
+# ---------------------------------------------------------
+df.isnull().sum()
 
-print(df['text'].head(10))    # Should display real email content
-print(df['text'].isnull().sum())  # Should be zero after fillna()
+# ---------------------------------------------------------
+# 4. Features & Target
+# ---------------------------------------------------------
 
-# Assuming your dataset is loaded as 'df'
-df['text'] = df['text'].fillna("").astype(str)   # Replace NaN with empty strings
+X = df["text"]           # email content
+y = df["spam"]           # 1 = spam, 0 = not spam
 
-# Optional sanity check:
-print(df['text'].apply(len).describe())
+print("Features Loaded:", X.shape)
+print("Target Loaded:", y.shape)
 
-df = pd.read_csv('emails.csv')
+# ---------------------------------------------------------
+# 5. Train / Test Split
+# ---------------------------------------------------------
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.25, random_state=42
+)
 
-# Force text data to string (solves your error)
-df['text'] = df['text'].fillna("").astype(str)
+print("Training Size:", X_train.shape)
+print("Testing Size:", X_test.shape)
 
-# Ensure target column exists (change if needed)
-print(df['spam'].value_counts())   # Should show counts of 0s and 1s
+# ---------------------------------------------------------
+# 6. TF-IDF Vectorization (robust; handles empty / stopword-only docs)
+# ---------------------------------------------------------
+import re
+from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
 
-# Ensure binary labels: 0 (Not Spam), 1 (Spam)
-df['spam'] = df['spam'].apply(lambda x: 1 if x != 0 else 0)
-print(df['spam'].value_counts())  # Should now show only 0s and 1s
+# Ensure strings and strip whitespace
+X_train = X_train.astype(str).str.strip()
+X_test  = X_test.astype(str).str.strip()
 
-# Convert to binary classification
-df['spam'] = df['spam'].apply(lambda x: 1 if x != 0 else 0)
+# Function: does a document contain any non-stopword token?
+def has_meaningful_token(doc):
+    # find word tokens (letters/digits/underscore)
+    tokens = re.findall(r'\w+', doc.lower())
+    # keep tokens that are not stopwords
+    tokens = [t for t in tokens if t not in ENGLISH_STOP_WORDS]
+    return len(tokens) > 0
 
-# Convert non-string entries to empty strings
-df['text'] = df['text'].astype(str)
+# Identify meaningful docs in training set
+mask_train = X_train.apply(has_meaningful_token)
 
-# Replace NaNs or missing values
-df['text'] = df['text'].fillna('')
+# If all training docs were filtered out, raise clear error with guidance
+if mask_train.sum() == 0:
+    raise ValueError(
+        "No training documents contain tokens after removing stop words. "
+        "Possible causes: your 'text' column is empty / contains only stopwords / "
+        "you converted a wrong column. Check the dataset or reduce stop_words."
+    )
 
-# Force convert all entries to string
-df['text'] = df['text'].astype(str)
+# Filter out empty / stopword-only docs from training (and corresponding labels)
+num_removed = len(mask_train) - mask_train.sum()
+if num_removed > 0:
+    print(f"Removed {num_removed} training documents that were empty or stopword-only.")
+    X_train = X_train[mask_train].reset_index(drop=True)
+    y_train = y_train[mask_train].reset_index(drop=True)
+else:
+    # reset indices for consistent behaviour
+    X_train = X_train.reset_index(drop=True)
+    y_train = y_train.reset_index(drop=True)
 
-df = df[df['text'].str.strip() != '']
+# For test set: keep them, but convert any truly-empty to empty string (vectorizer will handle rows with no tokens)
+X_test = X_test.reset_index(drop=True)
 
-print(df['text'].head(20))
+# Create TF-IDF vectorizer.
+# Use token_pattern that allows single-letter tokens when necessary.
+tfidf = TfidfVectorizer(stop_words='english', max_features=5000, token_pattern=r'(?u)\b\w+\b')
 
-# Keep rows that contain at least one alphabetical character
-df = df[df['text'].str.contains('[a-zA-Z]', regex=True)]
+# Fit on cleaned training data and transform
+X_train_tfidf = tfidf.fit_transform(X_train)
 
-vectorizer = TfidfVectorizer(stop_words='english')
-X = vectorizer.fit_transform(df['text'])
-y = df['spam']
+# Transform test — empty test docs will produce zero vectors (allowed)
+X_test_tfidf = tfidf.transform(X_test)
 
-import pandas as pd
+print("TF-IDF Transformation Completed Successfully!")
+print(f"Training samples (after cleaning): {X_train_tfidf.shape[0]}")
+print(f"Features (vocabulary size): {X_train_tfidf.shape[1]}")
 
-# Load the dataset
-df = pd.read_csv('emails.csv')
-
-# Display the first few rows of the DataFrame
-print(df.head())
-
-# Separate features and target variable
-X = df.iloc[:, :-1]  # All columns except the last one
-y = df.iloc[:, -1]   # The last column
-
-# Display the shapes of X and y
-print("Shape of X:", X.shape)
-print("Shape of y:", y.shape)
-
-from sklearn.model_selection import train_test_split
-
-# Split the data
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
+# ----------------- Train classifiers and evaluate (drop-in block) -----------------
 from sklearn.neighbors import KNeighborsClassifier
-
-# Train KNN model
-knn = KNeighborsClassifier(n_neighbors=3)
-knn.fit(X_train, y_train)
-
-# Predict using KNN
-y_pred_knn = knn.predict(X_test)
-
-# Evaluate KNN
-from sklearn.metrics import classification_report, accuracy_score
-
-print("KNN Classification Report:\n", classification_report(y_test, y_pred_knn))
-print("KNN Accuracy:", accuracy_score(y_test, y_pred_knn))
-
-print(df.dtypes)
-
-import pandas as pd
-
-# Attempt to convert all columns to numeric
-for col in df.columns:
-    df[col] = pd.to_numeric(df[col], errors='coerce')
-
-# Check for any remaining non-numeric values
-print(df.isnull().sum())
-
-# Fill NaN values with 0 or drop rows with NaN values
-df.fillna(0, inplace=True)  # Or use df.dropna(inplace=True)
-
-# Separate features and target variable
-X = df.iloc[:, :-1]  # All columns except the last one
-y = df.iloc[:, -1]   # The last column
-
-# Display the shapes of X and y
-print("Shape of X:", X.shape)
-print("Shape of y:", y.shape)
-
-from sklearn.model_selection import train_test_split
-
-# Split the data
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-from sklearn.neighbors import KNeighborsClassifier
-
-# Train KNN model
-knn = KNeighborsClassifier(n_neighbors=3)
-knn.fit(X_train, y_train)
-
-# Predict using KNN
-y_pred_knn = knn.predict(X_test)
-
-# Evaluate KNN
-from sklearn.metrics import classification_report, accuracy_score
-
-print("KNN Classification Report:\n", classification_report(y_test, y_pred_knn))
-print("KNN Accuracy:", accuracy_score(y_test, y_pred_knn))
-
 from sklearn.svm import SVC
+from sklearn.metrics import (
+    confusion_matrix, accuracy_score, precision_score, recall_score,
+    f1_score, classification_report, roc_auc_score
+)
+import numpy as np
+import pandas as pd
 
-# Train SVM model
-svm = SVC(kernel='linear', probability=True)
-svm.fit(X_train, y_train)
+# Ensure label arrays are int and indices are aligned
+y_train = y_train.astype(int).reset_index(drop=True)
+y_test  = y_test.astype(int).reset_index(drop=True)
 
-# Predict using SVM
-y_pred_svm = svm.predict(X_test)
+print("\nShapes:")
+print(" X_train_tfidf:", getattr(X_train_tfidf, "shape", None))
+print(" X_test_tfidf :", getattr(X_test_tfidf, "shape", None))
+print(" y_train      :", y_train.shape)
+print(" y_test       :", y_test.shape)
 
-# Evaluate SVM
-print("SVM Classification Report:\n", classification_report(y_test, y_pred_svm))
-print("SVM Accuracy:", accuracy_score(y_test, y_pred_svm))
+# ----------------- KNN -----------------
+print("\nTraining K-Nearest Neighbors (k=5)...")
+knn = KNeighborsClassifier(n_neighbors=5, n_jobs=-1)
+knn.fit(X_train_tfidf, y_train)
+
+knn_pred = knn.predict(X_test_tfidf)
+knn_prob = None
+if hasattr(knn, "predict_proba"):
+    try:
+        knn_prob = knn.predict_proba(X_test_tfidf)[:, 1]  # may be multiclass -> this picks class index 1
+    except Exception:
+        knn_prob = None
+
+# Metrics (weighted average works for binary and multiclass)
+knn_cm   = confusion_matrix(y_test, knn_pred)
+knn_acc  = accuracy_score(y_test, knn_pred)
+knn_err  = 1.0 - knn_acc
+knn_prec = precision_score(y_test, knn_pred, average='weighted', zero_division=0)
+knn_rec  = recall_score(y_test, knn_pred, average='weighted', zero_division=0)
+knn_f1   = f1_score(y_test, knn_pred, average='weighted', zero_division=0)
+knn_auc  = np.nan
+try:
+    # only compute AUC when binary (y_test has 2 unique values) and probabilities exist
+    if knn_prob is not None and len(np.unique(y_test)) == 2:
+        knn_auc = roc_auc_score(y_test, knn_prob)
+except Exception:
+    knn_auc = np.nan
+
+print("\n=== KNN Results ===")
+print("Confusion Matrix:\n", knn_cm)
+print(f"Accuracy : {knn_acc:.4f}")
+print(f"Error    : {knn_err:.4f}")
+print(f"Precision: {knn_prec:.4f}")
+print(f"Recall   : {knn_rec:.4f}")
+print(f"F1 Score : {knn_f1:.4f}")
+if not np.isnan(knn_auc):
+    print(f"AUC      : {knn_auc:.4f}")
+
+print("\nKNN Classification Report:")
+print(classification_report(y_test, knn_pred, zero_division=0))
+
+# ----------------- SVM -----------------
+print("\nTraining Support Vector Machine (linear kernel)...")
+svm = SVC(kernel='linear', probability=True, random_state=42)
+svm.fit(X_train_tfidf, y_train)
+
+svm_pred = svm.predict(X_test_tfidf)
+svm_prob = None
+if hasattr(svm, "predict_proba"):
+    try:
+        svm_prob = svm.predict_proba(X_test_tfidf)[:, 1]
+    except Exception:
+        svm_prob = None
+
+svm_cm   = confusion_matrix(y_test, svm_pred)
+svm_acc  = accuracy_score(y_test, svm_pred)
+svm_err  = 1.0 - svm_acc
+svm_prec = precision_score(y_test, svm_pred, average='weighted', zero_division=0)
+svm_rec  = recall_score(y_test, svm_pred, average='weighted', zero_division=0)
+svm_f1   = f1_score(y_test, svm_pred, average='weighted', zero_division=0)
+svm_auc  = np.nan
+try:
+    if svm_prob is not None and len(np.unique(y_test)) == 2:
+        svm_auc = roc_auc_score(y_test, svm_prob)
+except Exception:
+    svm_auc = np.nan
+
+print("\n=== SVM Results ===")
+print("Confusion Matrix:\n", svm_cm)
+print(f"Accuracy : {svm_acc:.4f}")
+print(f"Error    : {svm_err:.4f}")
+print(f"Precision: {svm_prec:.4f}")
+print(f"Recall   : {svm_rec:.4f}")
+print(f"F1 Score : {svm_f1:.4f}")
+if not np.isnan(svm_auc):
+    print(f"AUC      : {svm_auc:.4f}")
+
+print("\nSVM Classification Report:")
+print(classification_report(y_test, svm_pred, zero_division=0))
+
+# ----------------- Summary table -----------------
+results_df = pd.DataFrame({
+    "Model": ["KNN", "SVM"],
+    "Accuracy": [knn_acc, svm_acc],
+    "Error": [knn_err, svm_err],
+    "Precision": [knn_prec, svm_prec],
+    "Recall": [knn_rec, svm_rec],
+    "F1": [knn_f1, svm_f1],
+    "AUC": [knn_auc, svm_auc]
+})
+print("\n=== Summary Comparison ===")
+print(results_df.round(4))
+
+# Optional: save results
+# results_df.to_csv("knn_svm_comparison.csv", index=False)
